@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 #  Excursionistas — Reserva 2026
 #  App Streamlit para cuerpo técnico de fútbol
 #  Datos en tiempo real desde Google Sheets (CSV público)
@@ -222,16 +222,19 @@ if "tema" not in st.session_state:
 # ─────────────────────────────────────────────
 
 with st.sidebar:
-    st.image(
-        "https://img.icons8.com/fluency/96/football2.png",
-        width=60,
-    )
-    st.markdown("## Excursionistas 2026")
+    # Centrar la imagen usando tres columnas
+    col_l, col_img, col_r = st.columns([1, 4, 1])
+    with col_img:
+        st.image(
+            r"C:\Users\crist\Desktop\excursionistas.png",
+            width=180,
+        )
+    st.markdown("<h2 style='text-align: center'>Excursionistas 2026</h2>", unsafe_allow_html=True)
     st.divider()
 
     seccion = st.radio(
         "Navegación",
-        options=["🏠 Inicio", "📅 Entrenamientos", "👥 Plantel", "🟡 Asistencia", "⚽ Post-Partido"],
+        options=["🏠 Inicio", "📅 Entrenamientos", "👥 Plantel", "🟡 Asistencia", "📹 Videoanálisis", "⚽ Post-Partido"],
         label_visibility="collapsed",
     )
 
@@ -256,10 +259,11 @@ def cargar_todo():
     partidos        = load_sheet("Partidos")
     postpartido     = load_sheet("PostPartido")
     entrenamientos  = load_sheet("Entrenamientos_Dia")   # nuevo
-    return plantel, sesiones, tareas, asistencia, partidos, postpartido, entrenamientos
+    videoanalisis   = load_sheet("Videoanalisis")
+    return plantel, sesiones, tareas, asistencia, partidos, postpartido, entrenamientos, videoanalisis
 
 
-plantel, sesiones, tareas, asistencia, partidos, postpartido, entrenamientos = cargar_todo()
+plantel, sesiones, tareas, asistencia, partidos, postpartido, entrenamientos, videoanalisis = cargar_todo()
 
 
 # ─────────────────────────────────────────────
@@ -511,6 +515,44 @@ elif seccion == "📅 Entrenamientos":
                         for col_widget, dia in zip(cols_dias, DIAS_ORDEN):
                             with col_widget:
                                 st.markdown(f"<div class='dia-header'>📆 {dia}</div>", unsafe_allow_html=True)
+                                
+                                # -- Información de Asistencia Diaria --
+                                info_asistencia_html = ""
+                                if not asistencia.empty and not plantel.empty and not dias_semana.empty:
+                                    dia_row = dias_semana[dias_semana["dia_semana"].str.strip().str.title() == dia]
+                                    if not dia_row.empty:
+                                        id_entreno_dia_actual = dia_row.iloc[0]["id_entreno_dia"]
+                                        ast_dia = asistencia[asistencia["id_entreno_dia"] == id_entreno_dia_actual]
+                                        
+                                        if not ast_dia.empty:
+                                            ast_dia = ast_dia.merge(
+                                                plantel[["id_jugador", "nombre"]],
+                                                on="id_jugador",
+                                                how="left"
+                                            )
+                                            total_dia = len(ast_dia)
+                                            ausentes = ast_dia[ast_dia["estado"] == "Ausente"]["nombre"].dropna().tolist()
+                                            diferenciados = ast_dia[ast_dia["estado"] == "Diferenciado"]["nombre"].dropna().tolist()
+                                            
+                                            # Construir texto de jugadores no disponibles 
+                                            lista_nombres = []
+                                            if ausentes:
+                                                lista_nombres.append(f"{', '.join(ausentes)} ausente")
+                                            if diferenciados:
+                                                lista_nombres.append(f"{', '.join(diferenciados)} diferenciado")
+                                                
+                                            detalle_str = f" ({'; '.join(lista_nombres)})" if lista_nombres else ""
+                                            
+                                            info_asistencia_html = (
+                                                f"<div style='margin-bottom:12px; font-size:0.85rem; color:#8d9db6; "
+                                                f"background:rgba(255,255,255,0.03); padding:6px; border-radius:6px;'>"
+                                                f"<b>{total_dia} jugadores</b>{detalle_str}"
+                                                f"</div>"
+                                            )
+                                
+                                if info_asistencia_html:
+                                    st.markdown(info_asistencia_html, unsafe_allow_html=True)
+
                                 if dia in tareas_sem["dia_semana"].values:
                                     tareas_dia = (
                                         tareas_sem[tareas_sem["dia_semana"] == dia]
@@ -656,6 +698,82 @@ elif seccion == "👥 Plantel":
 
                 with st.expander("📈 Más estadísticas (próximamente)"):
                     st.info("Aquí se agregarán métricas de rendimiento físico, posesión, pressing, etc.")
+                    
+                # ── Videos del Jugador (Videoanálisis) ──
+                if not videoanalisis.empty and "jugadores_etiquetados" in videoanalisis.columns:
+                    # Buscar videos que incluyan el nombre del jugador
+                    vid_jug = videoanalisis[
+                        videoanalisis["jugadores_etiquetados"].fillna("").str.contains(jug["nombre"], case=False, na=False)
+                    ]
+                    
+                    if not vid_jug.empty:
+                        st.markdown("---")
+                        st.markdown("#### 📹  Videoanálisis personal")
+                        st.caption(f"Clips tácticos y resúmenes vinculados a {jug['nombre']}")
+                        
+                        # Combinar con Partidos para obtener información de fecha y rival (opcional, solo para mostrar)
+                        if not partidos.empty and "id_partido" in vid_jug.columns:
+                            vid_jug = vid_jug.merge(
+                                partidos[["id_partido", "rival", "fecha"]],
+                                on="id_partido",
+                                how="left"
+                            )
+
+                        # Crear opciones de filtro de partido
+                        def get_contexto(row):
+                            rival_str = row.get("rival", "")
+                            fecha_part = row.get("fecha", pd.NaT)
+                            if pd.notna(rival_str) and rival_str != "":
+                                if pd.notna(fecha_part):
+                                    return f"vs {rival_str} ({parse_fecha(pd.Series([fecha_part])).iloc[0].strftime('%d/%m')})"
+                                return f"vs {rival_str}"
+                            return "Sin asignar a partido"
+
+                        vid_jug["contexto_partido"] = vid_jug.apply(get_contexto, axis=1)
+                        partidos_disponibles = sorted(vid_jug["contexto_partido"].unique().tolist())
+                        
+                        if partidos_disponibles:
+                            partidos_con_todos = ["Todos los partidos"] + partidos_disponibles
+                            partido_filtro = st.selectbox("Filtrar clips por:", partidos_con_todos, key="filtro_vid_jugador")
+                            
+                            if partido_filtro != "Todos los partidos":
+                                vid_jug = vid_jug[vid_jug["contexto_partido"] == partido_filtro]
+                                
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        
+                        if vid_jug.empty:
+                            st.info("No hay videos para este filtro.")
+                        else:
+                            # Mostrar en grilla de 2 columnas
+                            for fila_start in range(0, len(vid_jug), 2):
+                                fila = vid_jug.iloc[fila_start : fila_start + 2]
+                                cols_vid = st.columns(2, gap="large")
+                                
+                                for col_v, (_, vid_row) in zip(cols_vid, fila.iterrows()):
+                                    with col_v:
+                                        titulo = vid_row.get("titulo", "Sin título")
+                                        tipo = vid_row.get("tipo_analisis", "")
+                                        desc = vid_row.get("descripcion", "")
+                                        link = str(vid_row.get("link_youtube", "")).strip()
+                                        contexto_str = vid_row.get("contexto_partido", "Video")
+                                            
+                                        st.markdown(f"**{titulo}** | {contexto_str}")
+                                    
+                                    if tipo and pd.notna(tipo):
+                                        st.caption(f"📌 {tipo}")
+                                        
+                                    if link and link.lower() not in ("nan", "none", ""):
+                                        try:
+                                            st.video(link)
+                                        except Exception:
+                                            st.error("Enlace de video inválido")
+                                    else:
+                                        st.info("Video no disponible o link roto")
+                                        
+                                    if desc and pd.notna(desc):
+                                        st.markdown(f"*{desc}*")
+                                        
+                                    st.markdown("<br>", unsafe_allow_html=True)
 
     # ── Vista principal: tarjetas por posición ────────────────────
     else:
@@ -770,14 +888,40 @@ elif seccion == "🟡 Asistencia":
                     how="left",
                 )
 
-            # Métricas rápidas
-            presente     = int((ast_fil["estado"] == "Presente").sum())
-            ausente      = int((ast_fil["estado"] == "Ausente").sum())
-            diferenciado = int((ast_fil["estado"] == "Diferenciado").sum())
-            total        = len(ast_fil)
+            # Rellenar nulos para armar correctamente el resumen
+            if "nombre" in ast_fil.columns:
+                ast_fil["nombre"] = ast_fil["nombre"].fillna("Desconocido")
+            if "posicion" in ast_fil.columns:
+                ast_fil["posicion"] = ast_fil["posicion"].fillna("—")
+            if "estado" in ast_fil.columns:
+                ast_fil["estado"] = ast_fil["estado"].fillna("Sin registro")
+
+            # Agrupar por jugador
+            if 'nombre' in ast_fil.columns:
+                df_resumen = ast_fil.groupby(['nombre', 'posicion', 'estado']).size().unstack(fill_value=0).reset_index()
+                df_resumen.columns.name = None
+                
+                for est in ["Presente", "Ausente", "Diferenciado"]:
+                    if est not in df_resumen.columns:
+                        df_resumen[est] = 0
+                        
+                df_resumen["Sesiones"] = df_resumen["Presente"] + df_resumen["Ausente"] + df_resumen["Diferenciado"]
+                total_jugadores = len(df_resumen)
+                
+                # Métricas rápidas (contar si el jugador tuvo AL MENOS UN ausente/diferenciado en la semana)
+                ausente = int((df_resumen["Ausente"] > 0).sum())
+                diferenciado = int((df_resumen["Diferenciado"] > 0).sum())
+                # Presente es el resto o si tiene al menos un presente
+                presente = int((df_resumen["Presente"] > 0).sum())
+            else:
+                df_resumen = pd.DataFrame()
+                total_jugadores = ast_fil["id_jugador"].nunique() if "id_jugador" in ast_fil.columns else len(ast_fil)
+                presente     = int((ast_fil["estado"] == "Presente").sum())
+                ausente      = int((ast_fil["estado"] == "Ausente").sum())
+                diferenciado = int((ast_fil["estado"] == "Diferenciado").sum())
 
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Total", total)
+            c1.metric("Jugadores", total_jugadores)
             c2.metric("✅ Presentes",     presente)
             c3.metric("❌ Ausentes",      ausente)
             c4.metric("⚠️ Diferenciados", diferenciado)
@@ -787,23 +931,22 @@ elif seccion == "🟡 Asistencia":
             col_tabla, col_grafico = st.columns([3, 2], gap="large")
 
             with col_tabla:
-                st.subheader("📋 Detalle")
-                cols_vis = [c for c in ["nombre", "posicion", "estado"] if c in ast_fil.columns]
-
-                def color_estado(val):
-                    colores = {
-                        "Presente": "color: #00c46a; font-weight:700",
-                        "Ausente": "color: #ff4b4b; font-weight:700",
-                        "Diferenciado": "color: #ffd600; font-weight:700",
-                    }
-                    return colores.get(val, "")
-
-                styled = (
-                    ast_fil[cols_vis]
-                    .sort_values("estado")
-                    .style.applymap(color_estado, subset=["estado"])
-                )
-                st.dataframe(styled, use_container_width=True, hide_index=True)
+                st.subheader("📋 Detalle por Jugador")
+                if not df_resumen.empty:
+                    # Renombrar columnas para mejor visualización
+                    df_resumen = df_resumen.rename(columns={
+                        "Presente": "✅ Presente",
+                        "Ausente": "❌ Ausente",
+                        "Diferenciado": "⚠️ Diferenciado"
+                    })
+                    # Ordenar prioritariamente por presencias y luego nombre
+                    df_resumen = df_resumen.sort_values(by=["✅ Presente", "nombre"], ascending=[False, True])
+                    
+                    cols_vis = ["nombre", "posicion", "✅ Presente", "❌ Ausente", "⚠️ Diferenciado", "Sesiones"]
+                    st.dataframe(df_resumen[cols_vis], use_container_width=True, hide_index=True)
+                else:
+                    cols_vis = [c for c in ["nombre", "posicion", "estado"] if c in ast_fil.columns]
+                    st.dataframe(ast_fil[cols_vis], use_container_width=True, hide_index=True)
 
             with col_grafico:
                 st.subheader("📊 Distribución")
@@ -843,6 +986,120 @@ elif seccion == "🟡 Asistencia":
                     legend=dict(font=dict(color="#e8eaed")),
                 )
                 st.plotly_chart(fig_pie, use_container_width=True)
+
+
+# ══════════════════════════════════════════════
+#  📹  VIDEOANÁLISIS
+# ══════════════════════════════════════════════
+
+elif seccion == "📹 Videoanálisis":
+    st.title("📹 Videoanálisis")
+    st.markdown("---")
+
+    if partidos.empty or videoanalisis.empty:
+        st.warning("No hay datos de partidos o videos cargados.")
+    else:
+        df_par = partidos.copy()
+        df_par["fecha"] = parse_fecha(df_par["fecha"])
+        df_par["label"] = df_par.apply(
+            lambda r: f"{r['fecha'].strftime('%d/%m/%Y') if pd.notna(r['fecha']) else '—'}  vs  "
+                      f"{r.get('rival','?')}  ({r.get('torneo','—')})",
+            axis=1,
+        )
+        df_par_sorted = df_par.sort_values("fecha", ascending=False)
+
+        # ── Selector de Partido ──
+        col_sel_p, _ = st.columns([2, 2])
+        with col_sel_p:
+            partido_label = st.selectbox("Seleccioná el partido a analizar", df_par_sorted["label"].tolist())
+            
+        id_partido_sel = df_par_sorted.loc[
+            df_par_sorted["label"] == partido_label, "id_partido"
+        ].values[0]
+
+        # ── Filtrar videos del partido ──
+        vid_fil = videoanalisis[videoanalisis["id_partido"] == id_partido_sel].copy()
+
+        if vid_fil.empty:
+            st.info("No hay recortes de video disponibles para este partido.")
+        else:
+            # ── Filtros combinados: Tipo y Jugador ──
+            col_f1, col_f2 = st.columns(2)
+            
+            with col_f1:
+                # ── Filtro por tipo de análisis ──
+                tipos_disponibles = vid_fil["tipo_analisis"].dropna().unique().tolist()
+                tipos_con_todos = ["Todos"] + tipos_disponibles if tipos_disponibles else ["Todos"]
+                tipo_sel = st.selectbox("Categoría de análisis", tipos_con_todos)
+
+            with col_f2:
+                # ── Filtro por Jugador (desde jugadores_etiquetados) ──
+                todos_jugadores = []
+                for j_str in vid_fil["jugadores_etiquetados"].dropna():
+                    # Separar por comas y limpiar espacios
+                    nombres = [n.strip() for n in str(j_str).split(",") if n.strip()]
+                    todos_jugadores.extend(nombres)
+                    
+                jugadores_unicos = sorted(list(set(todos_jugadores)))
+                jug_con_todos = ["Todos"] + jugadores_unicos
+                
+                jugador_sel = st.selectbox("Jugador etiquetado", jug_con_todos)
+
+            # Aplicar filtros
+            if tipo_sel != "Todos":
+                vid_fil = vid_fil[vid_fil["tipo_analisis"] == tipo_sel]
+                
+            if jugador_sel != "Todos":
+                # Usar containts para ver si el jugador está en la lista separada por comas
+                vid_fil = vid_fil[
+                    vid_fil["jugadores_etiquetados"].fillna("").str.contains(jugador_sel, case=False, na=False)
+                ]
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # ── Renderizar videos ──
+            if vid_fil.empty:
+                st.warning("No hay videos para la categoría seleccionada.")
+            else:
+                # Mostrar en grilla de a 2 si hay muchos
+                for fila_start in range(0, len(vid_fil), 2):
+                    fila = vid_fil.iloc[fila_start : fila_start + 2]
+                    cols_vid = st.columns(2, gap="large")
+                    
+                    for col_v, (_, vid_row) in zip(cols_vid, fila.iterrows()):
+                        with col_v:
+                            titulo = vid_row.get("titulo", "Sin título")
+                            tipo = vid_row.get("tipo_analisis", "")
+                            desc = vid_row.get("descripcion", "")
+                            link = str(vid_row.get("link_youtube", "")).strip()
+                            jugadores = vid_row.get("jugadores_etiquetados", "")
+                            
+                            st.markdown(f"#### {titulo}")
+                            
+                            if tipo and pd.notna(tipo):
+                                st.caption(f"📌 {tipo}")
+                                
+                            if link and link.lower() not in ("nan", "none", ""):
+                                # Tratar de manejar links sucios
+                                try:
+                                    st.video(link)
+                                except Exception:
+                                    st.error("Enlace de video inválido")
+                            else:
+                                st.info("Video no disponible o link roto")
+                                
+                            if desc and pd.notna(desc):
+                                st.markdown(f"*{desc}*")
+                                
+                            if jugadores and pd.notna(jugadores):
+                                st.markdown(
+                                    f"<div style='font-size:0.8rem; background:rgba(56,189,248,0.1); "
+                                    f"padding:4px 8px; border-radius:4px; display:inline-block; margin-top:4px;'>"
+                                    f"👤 <b>{jugadores}</b></div>", 
+                                    unsafe_allow_html=True
+                                )
+                            
+                            st.markdown("<br>", unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════
