@@ -226,7 +226,7 @@ with st.sidebar:
     col_l, col_img, col_r = st.columns([1, 4, 1])
     with col_img:
         st.image(
-            r"C:\Users\crist\Desktop\excursionistas.png",
+            "excursionistas.png",
             width=180,
         )
     st.markdown("<h2 style='text-align: center'>Excursionistas 2026</h2>", unsafe_allow_html=True)
@@ -1221,3 +1221,4 @@ elif seccion == "⚽ Post-Partido":
             rc2.metric("Min. totales", int(pp_fil["minutos"].sum()) if "minutos" in pp_fil.columns else "—")
             rc3.metric("Goles",        int(pp_fil["goles"].sum())   if "goles"   in pp_fil.columns else "—")
             rc4.metric("Asistencias",  int(pp_fil["asistencias"].sum()) if "asistencias" in pp_fil.columns else "—")
+
